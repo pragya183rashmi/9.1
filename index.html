@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docker Multi-Stage Build for React</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar for code blocks */
+        .code-block::-webkit-scrollbar {
+            height: 8px;
+        }
+        .code-block::-webkit-scrollbar-thumb {
+            background: #2dd4bf;
+            border-radius: 4px;
+        }
+        .code-block::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        /* Custom font */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Base styles for the dark theme */
+        .container-bg {
+            background-color: #111827; /* Darkest Blue-Gray */
+        }
+        .card {
+            background-color: #1f2937; /* Slightly Lighter Dark Gray */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+        }
+        .accent-color {
+            color: #2dd4bf; /* Teal Accent */
+        }
+    </style>
+</head>
+<body class="container-bg min-h-screen p-4 sm:p-8 text-gray-100 flex justify-center">
+
+    <div class="max-w-4xl w-full">
+        <!-- Header -->
+        <header class="text-center py-6 mb-8 border-b border-teal-600/50">
+            <h1 class="text-4xl sm:text-5xl font-extrabold accent-color tracking-tight">
+                React Docker Multi-Stage Build
+            </h1>
+            <p class="text-lg text-gray-400 mt-2">Efficient, Secure, and Tiny Production Images</p>
+        </header>
+
+        <!-- Main Content -->
+        <div class="space-y-12">
+            
+            <!-- Section 1: Concept -->
+            <div class="card p-6 sm:p-8 rounded-xl">
+                <h2 class="text-2xl font-bold accent-color mb-4">The Multi-Stage Advantage</h2>
+                <p class="text-gray-300 leading-relaxed">
+                    A multi-stage build uses one base image (like Node) to compile your React application, and a separate, minimal base image (like Nginx) to serve the final static files. This prevents development dependencies and build tools from ever making it into your final production container, resulting in a significantly smaller and more secure image.
+                </p>
+            </div>
+
+            <!-- Section 2: Dockerfile Tabs -->
+            <div class="card p-6 sm:p-8 rounded-xl">
+                <h2 class="text-2xl font-bold accent-color mb-6">The Files</h2>
+                
+                <div class="flex space-x-2 border-b border-gray-700 mb-4">
+                    <button onclick="showTab('dockerfile')" class="tab-button py-2 px-4 rounded-t-lg font-medium transition-colors duration-200" data-target="dockerfile">Dockerfile</button>
+                    <button onclick="showTab('nginx')" class="tab-button py-2 px-4 rounded-t-lg font-medium transition-colors duration-200" data-target="nginx">nginx.conf</button>
+                </div>
+
+                <!-- Dockerfile Content -->
+                <div id="dockerfile" class="tab-content relative">
+                    <h3 class="text-xl font-semibold text-gray-200 mb-3">1. Dockerfile</h3>
+                    <pre class="code-block bg-gray-800 p-4 rounded-lg overflow-x-auto text-sm text-green-300 border border-gray-700 cursor-pointer transition-shadow hover:shadow-lg hover:shadow-teal-500/10" onclick="copyCode('dockerfile-code')"><code id="dockerfile-code"># --- STAGE 1: BUILDER ---
+# Use a Node image to install dependencies and build the application
+FROM node:20-alpine AS builder
+
+# Set the working directory
+WORKDIR /app
+
+# Copy package.json and package-lock.json to leverage Docker layer caching
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy the rest of the application source code
+COPY . .
+
+# Build the React application. This generates the 'build' folder.
+RUN npm run build
+
+
+# --- STAGE 2: PRODUCTION SERVER ---
+# Use a minimal Nginx image to serve the static files
+FROM nginx:alpine
+
+# Copy the custom Nginx configuration file
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy the static build output from the builder stage
+# /app/build is the result of 'npm run build'
+COPY --from=builder /app/build /usr/share/nginx/html
+
+# Expose the port Nginx is running on
+EXPOSE 80
+
+# The default command runs Nginx in the foreground
+CMD ["nginx", "-g", "daemon off;"]
+</code></pre>
+                </div>
+
+                <!-- Nginx Content -->
+                <div id="nginx" class="tab-content hidden relative">
+                    <h3 class="text-xl font-semibold text-gray-200 mb-3">2. nginx.conf (Custom Configuration)</h3>
+                    <pre class="code-block bg-gray-800 p-4 rounded-lg overflow-x-auto text-sm text-green-300 border border-gray-700 cursor-pointer transition-shadow hover:shadow-lg hover:shadow-teal-500/10" onclick="copyCode('nginx-code')"><code id="nginx-code">server {
+    listen 80;
+    server_name localhost;
+
+    # Set up basic compression (optional but recommended)
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+    # Serve the static files
+    location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        try_files $uri $uri/ /index.html; # CRITICAL for React Router (Single Page Application support)
+    }
+
+    # Optional: Cache control for static assets
+    location ~* \.(?:css|js|jpe?g|gif|png|ico|cur|gz|svg|svgz|mp4|ogg|ogv|webm|htc)$ {
+        expires 1y;
+        access_log off;
+        add_header Cache-Control "public";
+    }
+}
+</code></pre>
+                </div>
+            </div>
+
+            <!-- Section 3: Commands -->
+            <div class="card p-6 sm:p-8 rounded-xl">
+                <h2 class="text-2xl font-bold accent-color mb-4">Build & Run Commands</h2>
+
+                <h3 class="text-xl font-semibold text-gray-300 mt-6 mb-3">Build the Image</h3>
+                <p class="text-gray-400 mb-2 text-sm">Run this command in the same directory as your `Dockerfile` and `nginx.conf`:</p>
+                <pre class="bg-gray-800 p-3 rounded-lg overflow-x-auto text-yellow-400 text-sm border border-gray-700 cursor-pointer" onclick="copyCode('build-cmd')"><code id="build-cmd">docker build -t react-app:prod .</code></pre>
+                <p class="text-xs mt-1 text-gray-500">The resulting image size will be only a fraction of the build image!</p>
+
+                <h3 class="text-xl font-semibold text-gray-300 mt-6 mb-3">Run the Container</h3>
+                <p class="text-gray-400 mb-2 text-sm">This maps the container's port 80 to your host's port 3000:</p>
+                <pre class="bg-gray-800 p-3 rounded-lg overflow-x-auto text-yellow-400 text-sm border border-gray-700 cursor-pointer" onclick="copyCode('run-cmd')">
+                    <code id="run-cmd">docker run -d -p 3000:80 --name react-prod-container react-app:prod</code>
+                </pre>
+            </div>
+            
+            <!-- Notification/Toast Area -->
+            <div id="toast" class="fixed bottom-5 right-5 bg-teal-600 text-white p-3 rounded-lg shadow-xl hidden transition-opacity duration-300">
+                Code copied to clipboard!
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Set up the initial tab state
+        document.addEventListener('DOMContentLoaded', () => {
+            showTab('dockerfile');
+        });
+
+        function showTab(tabName) {
+            // Hide all contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+
+            // Deactivate all buttons
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('bg-teal-600', 'text-white');
+                button.classList.add('text-gray-400', 'hover:text-teal-400');
+            });
+
+            // Show the selected content
+            document.getElementById(tabName).classList.remove('hidden');
+
+            // Activate the corresponding button
+            document.querySelector(`.tab-button[data-target="${tabName}"]`).classList.add('bg-teal-600', 'text-white');
+            document.querySelector(`.tab-button[data-target="${tabName}"]`).classList.remove('text-gray-400', 'hover:text-teal-400');
+        }
+
+        function copyCode(elementId) {
+            const codeElement = document.getElementById(elementId);
+            // Use execCommand('copy') for better compatibility in iframe environments
+            try {
+                const range = document.createRange();
+                range.selectNode(codeElement);
+                window.getSelection().removeAllRanges();
+                window.getSelection().addRange(range);
+                document.execCommand('copy');
+                window.getSelection().removeAllRanges();
+                
+                // Show toast notification
+                const toast = document.getElementById('toast');
+                toast.classList.remove('hidden', 'opacity-0');
+                toast.classList.add('opacity-100');
+                
+                setTimeout(() => {
+                    toast.classList.remove('opacity-100');
+                    toast.classList.add('opacity-0');
+                    setTimeout(() => toast.classList.add('hidden'), 300);
+                }, 1500);
+
+            } catch (err) {
+                console.error('Failed to copy code: ', err);
+            }
+        }
+    </script>
+</body>
+</html>
